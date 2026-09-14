@@ -381,13 +381,14 @@ input[type=password]:focus-visible, input[type=search]:focus-visible{
 
   /* ================= Focus helpers ================= */
   function focusPin(){ try { pinEl.focus(); pinEl.select?.(); } catch(_) {} }
-  function focusPinSafely(){ if (document.activeElement !== qEl) focusPin(); }
+  function focusPinSafely(){ if (document.activeElement !== qEl && document.activeElement !== reasonSelectEl) focusPin(); }
   document.addEventListener('visibilitychange', () => { if (!document.hidden) focusPinSafely(); });
   window.addEventListener('pageshow', (e) => { if (e.persisted) focusPinSafely(); });
   document.addEventListener('click', (e) => {
     if (e.target === qEl || qEl.contains(e.target)) return;
     if (e.target.closest('#results')) return;
     if (e.target.closest('.list')) return;
+    if (reasonSelectEl && (e.target === reasonSelectEl || reasonSelectEl.contains(e.target))) return;
     setTimeout(focusPinSafely, 0);
   }, true);
 
@@ -413,6 +414,16 @@ input[type=password]:focus-visible, input[type=search]:focus-visible{
     const opts = REASON_OPTIONS[action] || [];
     const match = opts.find(o => o.code === code);
     return match ? match.label : '';
+  }
+  // Only snap focus back to the PIN field once a selection is actually made
+  // (native 'change', fired after the picker closes) - not on 'click', which
+  // fires the instant the dropdown opens and would yank focus away mid-pick.
+  // Uses focusPin() (unconditional) rather than focusPinSafely(), since the
+  // browser keeps the <select> itself focused even after its value changes -
+  // the "safely" guard that protects the dropdown while it's in use would
+  // otherwise no-op here, right when we actually do want focus to move on.
+  if (reasonSelectEl) {
+    reasonSelectEl.addEventListener('change', () => { setTimeout(focusPin, 0); });
   }
 
   /* ================= Action toggle ================= */
