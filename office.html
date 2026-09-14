@@ -93,6 +93,13 @@ body.dark .badge.station{ background:#1e3a5f; border-color:#3b82f6; color:#bfdbf
   background:linear-gradient(180deg, #dc2626 0%, #991b1b 100%); color:#fff; border-color:#dc2626;
   box-shadow:0 0 0 4px rgba(220,38,38,.25);
 }
+.reasonRow{ display:flex; align-items:center; gap:12px; margin:0 0 18px; }
+.reasonLabel{ font-weight:800; font-size:13px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; white-space:nowrap; }
+.reasonSelect{
+  flex:1 1 auto; padding:14px 16px; font-size:17px; font-weight:700;
+  border:1.5px solid var(--border); border-radius:12px; background:var(--card); color:var(--text);
+}
+.reasonSelect:focus-visible{ border-color:#3b82f6; box-shadow:var(--ring); outline:none; }
 .grid{ display:grid; grid-template-columns:1fr 1fr; gap:18px; align-items:stretch; }
 .card{
   border:1px solid var(--border); border-radius:14px; background:var(--card); padding:16px;
@@ -171,6 +178,11 @@ input[type=password]:focus-visible, input[type=search]:focus-visible{
     <button id="actOut" role="tab" aria-selected="false" type="button" aria-label="Set action to OUT">OUT</button>
   </div>
 
+  <div class="reasonRow">
+    <label for="reasonCode" class="reasonLabel">Reason</label>
+    <select id="reasonCode" class="reasonSelect" aria-label="Reason code"></select>
+  </div>
+
   <div class="grid">
     <div class="card">
       <h2>Cougar Card</h2>
@@ -205,7 +217,7 @@ input[type=password]:focus-visible, input[type=search]:focus-visible{
   const DEDUPE_WINDOW_MS = 5000;
   const WEDGE_QUIET_MS = 100;
   const BATCH_DELAY_MS = 500;
-  const REQUEST_TIMEOUT_MS = 15000; // regular requests
+  const REQUEST_TIMEOUT_MS = 45000; // regular requests - must comfortably exceed the backend's own ~36s worst-case retry budget (SpreadsheetService.withRetry x2 per scan) to avoid the client aborting/retrying a request the server was still successfully processing
   const BOOTSTRAP_TIMEOUT_MS = 45000; // bootstrap needs more time for GAS cold starts
   const RETRY_CONFIG = {
     maxAttempts: 8,
@@ -213,9 +225,25 @@ input[type=password]:focus-visible, input[type=search]:focus-visible{
     concurrentRetries: 3
   };
 
+  // Office-only reason codes: Tardy on sign-in, Early Dismissal on sign-out.
+  // First entry in each list is that mode's default.
+  const REASON_OPTIONS = {
+    in: [
+      { code: '8', label: 'Late - Unexcused' },
+      { code: '96', label: 'Late: Sick' },
+      { code: '105', label: 'Late: Doctor/Medical' }
+    ],
+    out: [
+      { code: '87', label: 'Left Early - Unexcused' },
+      { code: '97', label: 'Leave Early: Sick' },
+      { code: '106', label: 'Leave Early: Doctor/Medical' }
+    ]
+  };
+
   const $ = s => document.querySelector(s);
   const pinEl = $('#pin'), qEl = $('#q'), toastEl = $('#toast');
   const btnIn = $('#actIn'), btnOut = $('#actOut');
+  const reasonSelectEl = $('#reasonCode');
   const netBadge = $('#netBadge'), themeBtn = $('#themeBtn');
   const rosterStatusEl = $('#rosterStatus');
   const queueStatusEl = $('#queueStatus');
@@ -363,11 +391,36 @@ input[type=password]:focus-visible, input[type=search]:focus-visible{
     setTimeout(focusPinSafely, 0);
   }, true);
 
+  /* ================= Reason code dropdown ================= */
+  function populateReasonOptions(action){
+    if (!reasonSelectEl) return;
+    const opts = REASON_OPTIONS[action] || REASON_OPTIONS.in;
+    reasonSelectEl.replaceChildren(...opts.map(o => {
+      const el = document.createElement('option');
+      el.value = o.code;
+      el.textContent = o.label;
+      return el;
+    }));
+    reasonSelectEl.selectedIndex = 0;
+  }
+  function resetReasonToDefault(){
+    if (reasonSelectEl) reasonSelectEl.selectedIndex = 0;
+  }
+  function getSelectedReasonCode(){
+    return reasonSelectEl ? (reasonSelectEl.value || '') : '';
+  }
+  function getReasonLabel(action, code){
+    const opts = REASON_OPTIONS[action] || [];
+    const match = opts.find(o => o.code === code);
+    return match ? match.label : '';
+  }
+
   /* ================= Action toggle ================= */
   function setAction(a){
     const inActive = a === 'in';
     btnIn.classList.toggle('active', inActive);
     btnOut.classList.toggle('active', !inActive);
+    populateReasonOptions(a);
     setTimeout(focusPinSafely, 0);
   }
   btnIn.addEventListener('click', () => setAction('in'));
@@ -739,6 +792,10 @@ input[type=password]:focus-visible, input[type=search]:focus-visible{
     const key = makeKey({ pin, personId });
     if (!canSendNow(key)) { Toast.show('Duplicate scan ignored (5s)', false); return; }
 
+    const reasonCode = getSelectedReasonCode();
+    const reasonLabel = getReasonLabel(act, reasonCode);
+    resetReasonToDefault();
+
     const eventTs = Date.now();
     const scanId = generateScanId();
 
@@ -748,7 +805,8 @@ input[type=password]:focus-visible, input[type=search]:focus-visible{
       clientTs: String(eventTs),
       apiKey: API_KEY,
       scanId,
-      station: STATION
+      station: STATION,
+      reasonCode
     };
     if (pin) bodyObj.pin = pin;
     if (personId) bodyObj.personId = personId;
@@ -770,23 +828,25 @@ input[type=password]:focus-visible, input[type=search]:focus-visible{
         const msg = (data && data.error) || ('Error ' + res.status);
         // Drive outage — queue silently, no error toast (scan will retry automatically)
         if (msg === 'service_unavailable') {
-          queuePendingScan({ action: act, src: bodyObj.src, pin: pin||'', personId: personId||'', firstName, lastName, grade, clientTs: String(eventTs), scanId, station: STATION });
+          queuePendingScan({ action: act, src: bodyObj.src, pin: pin||'', personId: personId||'', firstName, lastName, grade, clientTs: String(eventTs), scanId, station: STATION, reasonCode });
           return;
         }
         Toast.show(msg, false);
         Chime.fail();
         queueClientError(msg, { a:act, pin:pin||'', personId:personId||'', src: bodyObj.src, firstName, lastName, grade, scanId });
-        queuePendingScan({ action: act, src: bodyObj.src, pin: pin || '', personId: personId || '', firstName, lastName, grade, clientTs: String(eventTs), scanId, station: STATION });
+        queuePendingScan({ action: act, src: bodyObj.src, pin: pin || '', personId: personId || '', firstName, lastName, grade, clientTs: String(eventTs), scanId, station: STATION, reasonCode });
         return;
       }
 
       if (data.status === 'student_in') {
-        Toast.show(`${data.student||'Student'} — checked IN at ${data.time||''}`, true);
+        const suffix = reasonLabel ? ` (${reasonLabel})` : '';
+        Toast.show(`${data.student||'Student'} — checked IN${suffix} at ${data.time||''}`, true);
         Chime.ok(); try{ navigator.vibrate?.(30); }catch{}
         return;
       }
       if (data.status === 'student_out_recorded') {
-        Toast.show(`${data.student||'Student'} — signed OUT at ${data.time||''}`, true);
+        const suffix = reasonLabel ? ` (${reasonLabel})` : '';
+        Toast.show(`${data.student||'Student'} — signed OUT${suffix} at ${data.time||''}`, true);
         Chime.ok(); try{ navigator.vibrate?.(30); }catch{}
         return;
       }
@@ -800,7 +860,7 @@ input[type=password]:focus-visible, input[type=search]:focus-visible{
       if (err.name === 'AbortError') { Toast.show('Request timeout', false); } else { Toast.show('Network error', false); }
       Chime.fail();
       queueClientError(err.name === 'AbortError' ? 'timeout' : 'fetch_failed', { a:act, pin:pin||'', personId:personId||'', src: bodyObj.src, firstName, lastName, grade, scanId });
-      queuePendingScan({ action: act, src: bodyObj.src, pin: pin || '', personId: personId || '', firstName, lastName, grade, clientTs: String(eventTs), scanId, station: STATION });
+      queuePendingScan({ action: act, src: bodyObj.src, pin: pin || '', personId: personId || '', firstName, lastName, grade, clientTs: String(eventTs), scanId, station: STATION, reasonCode });
     }finally{
       lastSubmitAt = Date.now();
       focusPinSafely();
@@ -813,18 +873,23 @@ input[type=password]:focus-visible, input[type=search]:focus-visible{
     const key = makeKey({ pin: legacyId, personId: '' });
     if (!canSendNow(key)) { Toast.show('Duplicate scan ignored (5s)', false); return; }
 
+    const reasonCode = getSelectedReasonCode();
+    const reasonLabel = getReasonLabel(act, reasonCode);
+    resetReasonToDefault();
+
     const eventTs = Date.now();
     const scanId = generateScanId();
     const now = new Date(eventTs);
     const timeStr = now.toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit' });
     const label = `${firstName||''} ${lastName||''}`.trim() || 'Student';
-    Toast.show(`${label} — checked IN at ${timeStr}`, true);
+    const suffix = reasonLabel ? ` (${reasonLabel})` : '';
+    Toast.show(`${label} — checked IN${suffix} at ${timeStr}`, true);
     try { Chime.ok(); navigator.vibrate?.(30); } catch(_) {}
 
     const payload = {
       action: act, src: src || 'tap_student', pin: String(legacyId), personId: '',
       firstName: firstName||'', lastName: lastName||'', grade: grade||'',
-      clientTs: String(eventTs), scanId, station: STATION
+      clientTs: String(eventTs), scanId, station: STATION, reasonCode
     };
     sendImmediately(payload);
   }
@@ -835,18 +900,23 @@ input[type=password]:focus-visible, input[type=search]:focus-visible{
     const key = makeKey({ pin: legacyId, personId: '' });
     if (!canSendNow(key)) { Toast.show('Duplicate scan ignored (5s)', false); return; }
 
+    const reasonCode = getSelectedReasonCode();
+    const reasonLabel = getReasonLabel(act, reasonCode);
+    resetReasonToDefault();
+
     const eventTs = Date.now();
     const scanId = generateScanId();
     const now = new Date(eventTs);
     const timeStr = now.toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit' });
     const who = `${firstName||''} ${lastName||''}`.trim() || 'Student';
-    Toast.show(`${who} — signed OUT — ${timeStr}`, true);
+    const suffix = reasonLabel ? ` (${reasonLabel})` : '';
+    Toast.show(`${who} — signed OUT${suffix} — ${timeStr}`, true);
     try { Chime.ok(); navigator.vibrate?.(30); } catch (_) {}
 
     const payload = {
       action: act, src: src || 'tap_student', pin: String(legacyId), personId: '',
       firstName: firstName||'', lastName: lastName||'', grade: grade||'',
-      clientTs: String(eventTs), scanId, station: STATION
+      clientTs: String(eventTs), scanId, station: STATION, reasonCode
     };
     sendImmediately(payload);
   }
