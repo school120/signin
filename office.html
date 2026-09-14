@@ -93,13 +93,21 @@ body.dark .badge.station{ background:#1e3a5f; border-color:#3b82f6; color:#bfdbf
   background:linear-gradient(180deg, #dc2626 0%, #991b1b 100%); color:#fff; border-color:#dc2626;
   box-shadow:0 0 0 4px rgba(220,38,38,.25);
 }
-.reasonRow{ display:flex; align-items:center; gap:12px; margin:0 0 18px; }
+.reasonRow{ display:flex; align-items:center; gap:12px; margin:0 0 18px; flex-wrap:wrap; }
 .reasonLabel{ font-weight:800; font-size:13px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; white-space:nowrap; }
-.reasonSelect{
-  flex:1 1 auto; padding:14px 16px; font-size:17px; font-weight:700;
-  border:1.5px solid var(--border); border-radius:12px; background:var(--card); color:var(--text);
+.reasonPills{ display:flex; gap:8px; flex-wrap:wrap; flex:1 1 auto; }
+.reasonPill{
+  padding:12px 18px; font-size:14px; font-weight:800; border-radius:999px;
+  border:1.5px solid var(--border); background:var(--card); color:var(--text);
+  cursor:pointer; white-space:nowrap; font-family:inherit;
+  transition:background .15s ease, border-color .15s ease, color .15s ease, transform .06s ease;
 }
-.reasonSelect:focus-visible{ border-color:#3b82f6; box-shadow:var(--ring); outline:none; }
+.reasonPill:active{ transform:translateY(1px); }
+.reasonPill:hover{ border-color:#3b82f6; }
+.reasonPill.active{
+  background:var(--blue); border-color:var(--blue); color:#fff;
+  box-shadow:0 0 0 3px rgba(59,130,246,.2);
+}
 .grid{ display:grid; grid-template-columns:1fr 1fr; gap:18px; align-items:stretch; }
 .card{
   border:1px solid var(--border); border-radius:14px; background:var(--card); padding:16px;
@@ -179,8 +187,8 @@ input[type=password]:focus-visible, input[type=search]:focus-visible{
   </div>
 
   <div class="reasonRow">
-    <label for="reasonCode" class="reasonLabel">Reason</label>
-    <select id="reasonCode" class="reasonSelect" aria-label="Reason code"></select>
+    <div class="reasonLabel">Reason</div>
+    <div id="reasonCode" class="reasonPills" role="group" aria-label="Reason code"></div>
   </div>
 
   <div class="grid">
@@ -243,7 +251,8 @@ input[type=password]:focus-visible, input[type=search]:focus-visible{
   const $ = s => document.querySelector(s);
   const pinEl = $('#pin'), qEl = $('#q'), toastEl = $('#toast');
   const btnIn = $('#actIn'), btnOut = $('#actOut');
-  const reasonSelectEl = $('#reasonCode');
+  const reasonPillsEl = $('#reasonCode');
+  let selectedReasonCode = '';
   const netBadge = $('#netBadge'), themeBtn = $('#themeBtn');
   const rosterStatusEl = $('#rosterStatus');
   const queueStatusEl = $('#queueStatus');
@@ -381,49 +390,52 @@ input[type=password]:focus-visible, input[type=search]:focus-visible{
 
   /* ================= Focus helpers ================= */
   function focusPin(){ try { pinEl.focus(); pinEl.select?.(); } catch(_) {} }
-  function focusPinSafely(){ if (document.activeElement !== qEl && document.activeElement !== reasonSelectEl) focusPin(); }
+  function focusPinSafely(){ if (document.activeElement !== qEl) focusPin(); }
   document.addEventListener('visibilitychange', () => { if (!document.hidden) focusPinSafely(); });
   window.addEventListener('pageshow', (e) => { if (e.persisted) focusPinSafely(); });
   document.addEventListener('click', (e) => {
     if (e.target === qEl || qEl.contains(e.target)) return;
     if (e.target.closest('#results')) return;
     if (e.target.closest('.list')) return;
-    if (reasonSelectEl && (e.target === reasonSelectEl || reasonSelectEl.contains(e.target))) return;
     setTimeout(focusPinSafely, 0);
   }, true);
 
-  /* ================= Reason code dropdown ================= */
+  /* ================= Reason code picker (plain buttons, not a native <select> -
+     avoids native-picker/focus quirks on touchscreen kiosk browsers) ================= */
   function populateReasonOptions(action){
-    if (!reasonSelectEl) return;
+    if (!reasonPillsEl) return;
     const opts = REASON_OPTIONS[action] || REASON_OPTIONS.in;
-    reasonSelectEl.replaceChildren(...opts.map(o => {
-      const el = document.createElement('option');
-      el.value = o.code;
-      el.textContent = o.label;
-      return el;
+    reasonPillsEl.replaceChildren(...opts.map((o, idx) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'reasonPill' + (idx === 0 ? ' active' : '');
+      btn.textContent = o.label;
+      btn.dataset.code = o.code;
+      btn.addEventListener('click', () => {
+        selectedReasonCode = o.code;
+        Array.from(reasonPillsEl.children).forEach(c => c.classList.toggle('active', c === btn));
+        // Selection is finished the instant a pill is tapped (no native picker
+        // to wait for) - hand focus straight back to the PIN field so the
+        // kiosk is immediately ready for the next card scan.
+        setTimeout(focusPin, 0);
+      });
+      return btn;
     }));
-    reasonSelectEl.selectedIndex = 0;
+    selectedReasonCode = opts.length ? opts[0].code : '';
   }
   function resetReasonToDefault(){
-    if (reasonSelectEl) reasonSelectEl.selectedIndex = 0;
+    if (!reasonPillsEl || !reasonPillsEl.firstElementChild) return;
+    const first = reasonPillsEl.firstElementChild;
+    selectedReasonCode = first.dataset.code || '';
+    Array.from(reasonPillsEl.children).forEach(c => c.classList.toggle('active', c === first));
   }
   function getSelectedReasonCode(){
-    return reasonSelectEl ? (reasonSelectEl.value || '') : '';
+    return selectedReasonCode || '';
   }
   function getReasonLabel(action, code){
     const opts = REASON_OPTIONS[action] || [];
     const match = opts.find(o => o.code === code);
     return match ? match.label : '';
-  }
-  // Only snap focus back to the PIN field once a selection is actually made
-  // (native 'change', fired after the picker closes) - not on 'click', which
-  // fires the instant the dropdown opens and would yank focus away mid-pick.
-  // Uses focusPin() (unconditional) rather than focusPinSafely(), since the
-  // browser keeps the <select> itself focused even after its value changes -
-  // the "safely" guard that protects the dropdown while it's in use would
-  // otherwise no-op here, right when we actually do want focus to move on.
-  if (reasonSelectEl) {
-    reasonSelectEl.addEventListener('change', () => { setTimeout(focusPin, 0); });
   }
 
   /* ================= Action toggle ================= */
