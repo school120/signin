@@ -188,7 +188,7 @@ input[type=password]:focus-visible, input[type=search]:focus-visible{
   </div>
 
   <div class="reasonRow">
-    <div class="reasonLabel">Reason</div>
+    <div class="reasonLabel" id="reasonLabelText">Late</div>
     <div id="reasonCode" class="reasonPills" role="group" aria-label="Reason code"></div>
   </div>
 
@@ -408,6 +408,8 @@ input[type=password]:focus-visible, input[type=search]:focus-visible{
   /* ================= Reason code picker (plain buttons, not a native <select> -
      avoids native-picker/focus quirks on touchscreen kiosk browsers) ================= */
   function populateReasonOptions(action){
+    const labelEl = document.getElementById('reasonLabelText');
+    if (labelEl) labelEl.textContent = action === 'out' ? 'Left Early' : 'Late';
     if (!reasonPillsEl) return;
     const opts = REASON_OPTIONS[action] || REASON_OPTIONS.in;
     reasonPillsEl.replaceChildren(...opts.map((o, idx) => {
