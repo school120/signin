@@ -872,12 +872,14 @@ input[type=password]:focus-visible, input[type=search]:focus-visible{
         const suffix = reasonLabel ? ` (${reasonLabel})` : '';
         Toast.show(`${data.student||'Student'} — checked IN${suffix} at ${data.time||''}`, true);
         Chime.ok(); try{ navigator.vibrate?.(30); }catch{}
+        warnIfVeracrossFailed(data);
         return;
       }
       if (data.status === 'student_out_recorded') {
         const suffix = reasonLabel ? ` (${reasonLabel})` : '';
         Toast.show(`${data.student||'Student'} — signed OUT${suffix} at ${data.time||''}`, true);
         Chime.ok(); try{ navigator.vibrate?.(30); }catch{}
+        warnIfVeracrossFailed(data);
         return;
       }
 
@@ -1002,6 +1004,15 @@ input[type=password]:focus-visible, input[type=search]:focus-visible{
   }
 
   /* ================= Immediate send ================= */
+  // The server reads Veracross back right after each office scan. If Veracross
+  // rejected it (or couldn't be reached) say so on screen instead of letting it pass silently.
+  function warnIfVeracrossFailed(data){
+    const v = data && data.veracross;
+    if (!v || (v.state !== 'failed' && v.state !== 'queued')) return;
+    Toast.show(`${data.student || 'Student'}: ${v.text}`, false, 4000);
+    try { Chime.fail(); } catch(_) {}
+  }
+
   async function sendImmediately(payload) {
     if (!navigator.onLine) { queuePendingScan(payload); return; }
     try {
@@ -1018,6 +1029,7 @@ input[type=password]:focus-visible, input[type=search]:focus-visible{
         try {
           const data = await res.clone().json();
           if (data && data.error === 'service_unavailable') { queuePendingScan(payload); return; }
+          warnIfVeracrossFailed(data);
         } catch (_) {}
         return;
       }
