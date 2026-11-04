@@ -636,7 +636,7 @@ input[type=password]:focus-visible, input[type=search]:focus-visible{
   let studentList = [];
   let bootstrapReady = false;
 
-  async function loadBootstrap(isManualRefresh = false){
+  async function loadBootstrap(isManualRefresh = false, fresh = true){
     // Retry up to 3 times — GAS cold starts can take 20-30s
     const MAX_ATTEMPTS = 3;
     let lastError;
@@ -644,7 +644,7 @@ input[type=password]:focus-visible, input[type=search]:focus-visible{
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), BOOTSTRAP_TIMEOUT_MS);
       try {
-        const res = await fetch(ENDPOINT + '?action=bootstrap&apiKey=' + encodeURIComponent(API_KEY), { signal: controller.signal });
+        const res = await fetch(ENDPOINT + '?action=bootstrap&apiKey=' + encodeURIComponent(API_KEY) + (fresh ? '&fresh=1' : ''), { signal: controller.signal });
         clearTimeout(timeoutId);
         if (!res.ok) throw new Error('Bootstrap HTTP ' + res.status);
         const data = await res.json();
@@ -699,9 +699,9 @@ input[type=password]:focus-visible, input[type=search]:focus-visible{
     dailySyncTimer = setTimeout(async () => {
       if (!isRefreshingRoster && bootstrapReady) {
         try {
-          console.log('Auto-syncing roster (daily)...');
+          console.log('Auto-syncing roster...');
           await loadBootstrap(false);
-          console.log('Daily roster sync completed');
+          console.log('Roster sync completed');
         } catch (e) {
           console.error('Daily roster sync failed:', e);
           queueClientError('bootstrap_autosync_failed', {
@@ -711,7 +711,7 @@ input[type=password]:focus-visible, input[type=search]:focus-visible{
         }
       }
       scheduleDailySync();
-    }, 24 * 60 * 60 * 1000);
+    }, 30 * 60 * 1000);
   }
 
   /* ================= Bootstrap overlay ================= */
@@ -843,8 +843,8 @@ input[type=password]:focus-visible, input[type=search]:focus-visible{
   }
 
   /* ================= FAST faculty IN/OUT ================= */
-  function quickFacultyAction({ personId, pin, firstName, lastName, src }) {
-    const act = btnIn.classList.contains('active') ? 'in' : 'out';
+  function quickFacultyAction({ personId, pin, firstName, lastName, src, actOverride }) {
+    const act = actOverride || (btnIn.classList.contains('active') ? 'in' : 'out');
     const key = makeKey({ pin, personId });
     if (!canSendNow(key)) { Toast.show('Duplicate scan ignored (5s)', false); return; }
 
@@ -874,8 +874,8 @@ input[type=password]:focus-visible, input[type=search]:focus-visible{
   }
 
   /* ================= FAST unknown-card error ================= */
-  function quickUnknownCardFail(pin){
-    const act = btnIn.classList.contains('active') ? 'in' : 'out';
+  function quickUnknownCardFail(pin, actOverride){
+    const act = actOverride || (btnIn.classList.contains('active') ? 'in' : 'out');
     const key = makeKey({ pin, personId: '' });
     if (!canSendNow(key)) { Toast.show('Duplicate scan ignored (5s)', false); return; }
 
@@ -918,6 +918,39 @@ input[type=password]:focus-visible, input[type=search]:focus-visible{
     }
   }
 
+  /* ================= Unknown card: refresh the list, then try once more ================= */
+  // The kiosk can be left open all day, so a replaced/new card may not be in its copy of
+  // the roster yet. Before rejecting a card, pull a fresh roster (at most once a minute per card).
+  const unknownCardChecked = new Map();
+  async function recheckUnknownCard(ten){
+    const last = unknownCardChecked.get(ten) || 0;
+    if (Date.now() - last < 60000 || !navigator.onLine) { quickUnknownCardFail(ten); return; }
+    unknownCardChecked.set(ten, Date.now());
+
+    // Lock in what was selected at the moment of the tap - the screen keeps working for
+    // the next student while this waits, so the toggle / reason may change before it finishes.
+    const isIn = btnIn.classList.contains('active');
+    const act = isIn ? 'in' : 'out';
+    Toast.show('Card not in list - checking for updates...', true, 4000);
+
+    // Never keep the staff member waiting long: give the refresh 8 seconds, then fall back
+    // to the normal path (the server also re-reads the sheet itself when it gets an unknown card).
+    try {
+      await Promise.race([loadBootstrap(false, true), new Promise(res => setTimeout(res, 8000))]);
+    } catch(_) {}
+
+    if (studentByLegacy.has(ten)) {
+      const rec = studentByLegacy.get(ten);
+      const p = { legacyId: ten, firstName: rec.firstName || '', lastName: rec.lastName || '', grade: rec.grade || '', src: 'tap_student' };
+      if (isIn) quickStudentIn(p); else quickStudentOut(p);
+    } else if (facultyByPin.has(ten)) {
+      const rec = facultyByPin.get(ten);
+      quickFacultyAction({ pin: ten, personId: rec.personId || '', firstName: rec.firstName || '', lastName: rec.lastName || '', src: 'tap_faculty', actOverride: act });
+    } else {
+      quickUnknownCardFail(ten, act);
+    }
+  }
+
   /* ================= Card input auto-submit ================= */
   let wedgeTimer = null;
   pinEl.addEventListener('input', ()=>{
@@ -945,7 +978,7 @@ input[type=password]:focus-visible, input[type=search]:focus-visible{
           const rec = facultyByPin.get(ten);
           quickFacultyAction({ pin: ten, personId: rec.personId || '', firstName: rec.firstName || '', lastName: rec.lastName || '', src: 'tap_faculty' });
         } else {
-          quickUnknownCardFail(ten);
+          recheckUnknownCard(ten);
         }
       } else {
         submitPinOrId({ pin: ten, src: 'tap_unknown' });
