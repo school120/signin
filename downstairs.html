@@ -157,7 +157,7 @@ input[type=password]:focus-visible, input[type=search]:focus-visible{
     </div>
     <div class="top-center">
       <h1>Downstairs Guard Booth</h1>
-      <p class="muted">Select <b>IN</b> or <b>OUT</b>, then swipe/tap Cougar Card or search by name. Scans are recorded here — official Veracross check-in happens at the Main Office.</p>
+      <p class="muted">This booth is <b>sign-out only</b>. Swipe/tap Cougar Card or search by name. Scans are recorded here — official Veracross check-in happens at the Main Office.</p>
     </div>
     <div class="right-badges">
       <div class="badge station">DOWNSTAIRS</div>
@@ -167,8 +167,8 @@ input[type=password]:focus-visible, input[type=search]:focus-visible{
   </div>
 
   <div class="segment segment-xl" role="tablist" aria-label="Action">
-    <button id="actIn" class="active" role="tab" aria-selected="true" type="button" aria-label="Set action to IN">IN</button>
-    <button id="actOut" role="tab" aria-selected="false" type="button" aria-label="Set action to OUT">OUT</button>
+    <button id="actIn" role="tab" aria-selected="false" type="button" aria-label="Set action to IN" hidden>IN</button>
+    <button id="actOut" class="active" role="tab" aria-selected="true" type="button" aria-label="Sign out">OUT</button>
   </div>
 
   <div class="grid">
@@ -364,23 +364,14 @@ input[type=password]:focus-visible, input[type=search]:focus-visible{
   }, true);
 
   /* ================= Action toggle ================= */
-  function setAction(a){
-    const inActive = a === 'in';
-    btnIn.classList.toggle('active', inActive);
-    btnOut.classList.toggle('active', !inActive);
+  // Downstairs guard booth is sign-out only: the action is always OUT.
+  function setAction(){
+    btnIn.classList.remove('active');
+    btnOut.classList.add('active');
     setTimeout(focusPinSafely, 0);
   }
-  btnIn.addEventListener('click', () => setAction('in'));
-  btnOut.addEventListener('click', () => setAction('out'));
-  window.addEventListener('keydown', (e)=>{
-    if(e.key==='ArrowLeft') setAction('in');
-    if(e.key==='ArrowRight') setAction('out');
-  });
-  function applyHashAction(){
-    const h = (location.hash || '').toLowerCase();
-    if (h === '#out') setAction('out');
-    else if (h === '#in') setAction('in');
-  }
+  btnOut.addEventListener('click', () => setAction());
+  function applyHashAction(){ setAction(); }
   window.addEventListener('hashchange', applyHashAction);
 
   /* ================= De-dupe (5s) ================= */
@@ -1183,7 +1174,7 @@ input[type=password]:focus-visible, input[type=search]:focus-visible{
 
     pinEl.disabled = false;
     qEl.disabled = false;
-    setAction('in');
+    setAction();
     applyHashAction();
     setTimeout(()=>{ pinEl.focus(); }, 0);
 
