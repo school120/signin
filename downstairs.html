@@ -1,0 +1,1196 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<title>Downstairs Guard Booth Kiosk</title>
+<meta name="description" content="Guard booth kiosk for IN/OUT with card swipe/tap or name lookup. Scans are recorded internally — Veracross is only notified from the Main Office kiosk." />
+<meta name="color-scheme" content="light dark">
+<meta id="meta-theme" name="theme-color" content="#ffffff">
+<style>
+:root{
+  --bg:#f6f7fb; --card:#ffffff; --text:#0f172a; --muted:#667085; --border:#e5e7eb;
+  --in:#16a34a; --out:#dc2626; --blue:#2563eb; --ok:#0f766e; --err:#b91c1c;
+  --radius-lg:14px; --radius-xl:18px;
+  --shadow-1:0 10px 30px rgba(0,0,0,.08);
+  --ring:0 0 0 6px rgba(59,130,246,.16);
+}
+body.dark{
+  --bg:#0b1020; --card:#111827; --text:#f9fafb; --muted:#cbd5e1; --border:#374151;
+}
+*{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+html, body { height:100%; margin:0; background:var(--bg); color:var(--text); font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; }
+html { overflow-x:hidden; }
+body{
+  min-height:100svh;
+  overscroll-behavior-y:contain;
+  overflow:auto;
+  -webkit-overflow-scrolling:touch;
+  padding-top: env(safe-area-inset-top, 0px);
+}
+.wrap{
+  margin:auto; width:min(1100px,96%);
+  background:var(--card); border-radius:var(--radius-xl); box-shadow:var(--shadow-1);
+  position:relative;
+  min-height:calc(100svh - env(safe-area-inset-top, 0px));
+  padding:28px;
+  padding-top:calc(28px + env(safe-area-inset-top, 0px));
+  overflow:visible;
+  overflow-x:clip;
+}
+.top-row{ position: relative; margin-bottom: 16px; padding-top: 36px; }
+.top-center{ text-align:center; max-width:100%; }
+.left-badges, .right-badges{ position:absolute; top:0; display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.left-badges{ left:0; }
+.right-badges{ right:0; }
+h1{ margin:0 0 6px; font-weight:900; font-size:30px; letter-spacing:.2px; }
+.muted{ color:var(--muted); }
+.badge{
+  font-size:12px; font-weight:800; padding:6px 10px; border-radius:999px;
+  border:1px solid var(--border); background:var(--card); color:var(--text);
+  white-space:nowrap; font-family:inherit; cursor:default;
+}
+.badge.clickable{ cursor:pointer; user-select:none; transition: border-color 0.2s ease, transform 0.1s ease; }
+.badge.clickable:hover{ border-color:#3b82f6; transform: translateY(-1px); }
+.badge.clickable:active{ transform: translateY(0); }
+.badge.net.online{ background:#dcfce7; border-color:#86efac; color:#166534; }
+.badge.net.offline{ background:#fee2e2; border-color:#fca5a5; color:#991b1b; }
+.badge.station{ background:#fef3c7; border-color:#fcd34d; color:#92400e; }
+body.dark .badge.station{ background:#4a3510; border-color:#d97706; color:#fde68a; }
+#themeBtn{
+  font-size:12px; font-weight:800; padding:6px 12px; border-radius:999px;
+  border:1px solid var(--border); background:var(--card); color:var(--text);
+  display:flex; align-items:center; gap:6px; cursor:pointer; font-family:inherit;
+}
+#themeBtn span{ font-size:12px; letter-spacing:.08em; }
+#themeBtn:hover, #themeBtn:focus-visible{ border-color:#3b82f6; box-shadow:var(--ring); outline:none; }
+@media (max-width:700px){
+  .top-row{ padding-top:64px; }
+  .top-center{ padding:0 12px; }
+}
+.toast{
+  position:fixed; left:50%; bottom:24px; transform:translateX(-50%) translateY(20px); opacity:0;
+  background:var(--card); border:1px solid var(--border); box-shadow:0 8px 30px rgba(0,0,0,.12);
+  border-radius:14px; padding:18px 22px; font-weight:900; font-size:20px;
+  transition:all .18s ease; pointer-events:none; z-index:50; text-align:center;
+}
+.toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+.toast.ok{ color:var(--ok); }
+.toast.err{ color:var(--err); }
+.segment{ display:flex; gap:14px; width:100%; margin:16px 0 20px; }
+.segment.segment-xl button{
+  flex:1 1 0; border:2px solid #d1d5db; border-radius:16px; font-weight:900;
+  font-size:42px; line-height:1.1; min-height:96px; padding:22px 24px; cursor:pointer;
+  color:#111827; background:linear-gradient(180deg, #f8fafc 0%, #e5e7eb 100%);
+  transition:transform .06s ease, box-shadow .2s ease, background .2s ease, border-color .2s ease, color .2s ease;
+  box-shadow:0 4px 10px rgba(0,0,0,.08);
+}
+.segment.segment-xl button.active#actIn{
+  background:linear-gradient(180deg, #16a34a 0%, #15803d 100%); color:#fff; border-color:#16a34a;
+  box-shadow:0 0 0 4px rgba(22,163,74,.25);
+}
+.segment.segment-xl button.active#actOut{
+  background:linear-gradient(180deg, #dc2626 0%, #991b1b 100%); color:#fff; border-color:#dc2626;
+  box-shadow:0 0 0 4px rgba(220,38,38,.25);
+}
+.grid{ display:grid; grid-template-columns:1fr 1fr; gap:18px; align-items:stretch; }
+.card{
+  border:1px solid var(--border); border-radius:14px; background:var(--card); padding:16px;
+  display:flex; flex-direction:column; height:100%; overflow:hidden; background-clip: padding-box;
+}
+.card h2{ margin:0 0 12px; font-size:20px; text-align:center; }
+input[type=password], input[type=search]{
+  width:100%; padding:18px 20px; font-size:24px; border:1.5px solid var(--border);
+  border-radius:12px; background:var(--card); color:var(--text);
+}
+input[type=password]::placeholder, input[type=search]::placeholder{ color:var(--muted); }
+input[type=password]:focus-visible, input[type=search]:focus-visible{
+  border-color:#3b82f6; box-shadow:var(--ring); outline:none;
+}
+.list{
+  display:grid; gap:12px; max-height:460px; overflow:auto; margin-top:14px;
+  background:var(--card); background-clip: padding-box; -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain; flex:1 1 auto; padding-right:16px; scrollbar-gutter: stable both-edges;
+}
+.row{
+  display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:12px;
+  padding:14px 16px; border:1px solid var(--border); border-radius:12px; background: var(--card);
+}
+.name{
+  min-width:0; font-weight:800; font-size:20px; color:var(--text);
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.actionBtn{
+  --c: var(--blue);
+  background:linear-gradient(180deg, var(--c) 0%, color-mix(in srgb, var(--c) 80%, #000 20%) 100%);
+  color:#fff; font-size:20px; padding:16px 20px; border:2px solid var(--c); border-radius:14px;
+  font-weight:900; cursor:pointer; box-shadow:0 6px 14px rgba(0,0,0,.15); justify-self:end;
+}
+.sectionHdr{ text-align:center; font-weight:900; font-size:14px; letter-spacing:.12em; color:var(--muted); padding:10px 0 2px; }
+@media (max-width:900px){
+  .grid{ grid-template-columns:1fr; }
+  .segment.segment-xl button{ font-size:36px; min-height:88px; }
+}
+.boot-overlay{
+  position:fixed; inset:0; background:rgba(15,23,42,.78); display:flex; align-items:center;
+  justify-content:center; z-index:60;
+}
+.boot-overlay-inner{
+  background:var(--card); color:var(--text); padding:20px 26px; border-radius:16px;
+  box-shadow:0 18px 40px rgba(0,0,0,.35); display:flex; flex-direction:column; align-items:center;
+  gap:10px; min-width:260px; text-align:center;
+}
+.boot-spinner{
+  width:32px; height:32px; border-radius:999px; border:3px solid rgba(148,163,184,.7);
+  border-top-color:var(--blue); animation:spin 0.7s linear infinite;
+}
+.boot-text{ font-weight:800; font-size:16px; }
+@keyframes spin{ to{ transform:rotate(360deg); } }
+</style>
+</head>
+<body>
+<div class="wrap" role="application" aria-label="Downstairs Guard Booth Kiosk">
+  <div class="top-row">
+    <div class="left-badges">
+      <div id="rosterStatus" class="badge clickable" title="Click to refresh roster">Roster: loading…</div>
+      <div id="queueStatus" class="badge clickable" title="Click to force sync">Queue</div>
+    </div>
+    <div class="top-center">
+      <h1>Downstairs Guard Booth</h1>
+      <p class="muted">Select <b>IN</b> or <b>OUT</b>, then swipe/tap Cougar Card or search by name. Scans are recorded here — official Veracross check-in happens at the Main Office.</p>
+    </div>
+    <div class="right-badges">
+      <div class="badge station">DOWNSTAIRS</div>
+      <button id="themeBtn" title="Toggle theme" aria-label="Toggle dark mode"><span>Dark</span></button>
+      <div id="netBadge" class="badge net online">Online</div>
+    </div>
+  </div>
+
+  <div class="segment segment-xl" role="tablist" aria-label="Action">
+    <button id="actIn" class="active" role="tab" aria-selected="true" type="button" aria-label="Set action to IN">IN</button>
+    <button id="actOut" role="tab" aria-selected="false" type="button" aria-label="Set action to OUT">OUT</button>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Cougar Card</h2>
+      <input id="pin" type="password" maxlength="32" inputmode="numeric" autocomplete="one-time-code" placeholder="Tap or swipe card…" aria-label="Cougar card" />
+    </div>
+    <div class="card">
+      <h2>Lookup by Name</h2>
+      <input id="q" type="search" inputmode="search" enterkeyhint="search" autocapitalize="words" autocorrect="off" spellcheck="false" placeholder="Search faculty or students" aria-label="Search name" />
+      <div id="results" class="list" role="list" aria-live="polite"></div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <div id="bootOverlay" class="boot-overlay" aria-live="polite" aria-busy="true">
+    <div class="boot-overlay-inner">
+      <div class="boot-spinner" aria-hidden="true"></div>
+      <div class="boot-text">Loading rosters…</div>
+    </div>
+  </div>
+</div>
+<script>
+(() => {
+  'use strict';
+
+  const ENDPOINT = 'https://script.google.com/macros/s/AKfycbyotGbl8sVLOwXfgqDQGob-xfmlFHxNRftIJQTxdLx3_Q4Mi3ORJWJzv7bwnP4NGfb_LQ/exec';
+  const API_KEY = 'a9c4e2b9-74fd-41df-b6f8-6f5f8f3b2c41';
+  const STATION = 'downstairs';
+  const LS_PREFIX = STATION + '_';
+
+  const COOLDOWN_MS = 250;
+  const DEDUPE_WINDOW_MS = 5000;
+  const WEDGE_QUIET_MS = 100;
+  const BATCH_DELAY_MS = 500;
+  const REQUEST_TIMEOUT_MS = 45000; // regular requests - must comfortably exceed the backend's own ~36s worst-case retry budget (SpreadsheetService.withRetry x2 per scan) to avoid the client aborting/retrying a request the server was still successfully processing
+  const BOOTSTRAP_TIMEOUT_MS = 45000; // bootstrap needs more time for GAS cold starts
+  const RETRY_CONFIG = {
+    maxAttempts: 8,
+    delays: [500, 1000, 2000, 3000, 5000, 8000, 12000, 15000],
+    concurrentRetries: 3
+  };
+
+  const $ = s => document.querySelector(s);
+  const pinEl = $('#pin'), qEl = $('#q'), toastEl = $('#toast');
+  const btnIn = $('#actIn'), btnOut = $('#actOut');
+  const netBadge = $('#netBadge'), themeBtn = $('#themeBtn');
+  const rosterStatusEl = $('#rosterStatus');
+  const queueStatusEl = $('#queueStatus');
+  const bootOverlay = $('#bootOverlay');
+
+  const digitsOnly = s => String(s||'').replace(/\D+/g,'');
+  const normalizePin = s => digitsOnly(s).slice(-10).padStart(10, '0');
+  const clamp = (n,min,max) => Math.min(max,Math.max(min,n));
+
+  const LS_BOOT_SUCCESS = LS_PREFIX + 'kiosk_bootstrap_last_success';
+  const LS_BOOT_FAIL = LS_PREFIX + 'kiosk_bootstrap_last_fail';
+  const LS_PENDING_SCANS = LS_PREFIX + 'pending_scans';
+  const LS_CLIENT_ERRORS = LS_PREFIX + 'client_error_queue';
+  const LS_THEME = LS_PREFIX + 'theme';
+
+  let lastBootSuccess = null;
+  let lastBootFail = null;
+  let batchFlushTimer = null;
+  let isFlushingQueue = false;
+  let isRefreshingRoster = false;
+  let dailySyncTimer = null;
+
+  /* ================= scanId generator ================= */
+  function generateScanId() {
+    try {
+      if (window.crypto && crypto.randomUUID) { return crypto.randomUUID(); }
+    } catch (_) {}
+    return 'scan_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 10);
+  }
+
+  /* ================= Toast ================= */
+  const Toast = (() => {
+    let timer = null;
+    function show(text, ok=true, dur=2200){
+      toastEl.textContent = text;
+      toastEl.classList.toggle('ok', ok);
+      toastEl.classList.toggle('err', !ok);
+      toastEl.classList.add('show');
+      clearTimeout(timer);
+      timer = setTimeout(()=>toastEl.classList.remove('show'), clamp(dur,600,4000));
+    }
+    return { show };
+  })();
+
+  /* ================= Chimes ================= */
+  const Chime = (() => {
+    let audioCtx=null, master=null, comp=null, dist=null, ready=false;
+    function init(){
+      if (ready) return;
+      const AC = window.AudioContext || window.webkitAudioContext;
+      audioCtx = new AC();
+      comp = audioCtx.createDynamicsCompressor();
+      comp.threshold.setValueAtTime(-12, audioCtx.currentTime);
+      comp.knee.setValueAtTime(24, audioCtx.currentTime);
+      comp.ratio.setValueAtTime(16, audioCtx.currentTime);
+      comp.attack.setValueAtTime(0.002, audioCtx.currentTime);
+      comp.release.setValueAtTime(0.08, audioCtx.currentTime);
+      dist = audioCtx.createWaveShaper();
+      dist.curve = (function makeCurve(amount=60){
+        const n=44100,c=new Float32Array(n),deg=Math.PI/180;
+        for(let i=0;i<n;i++){ const x=(i*2)/n-1; c[i]=(3+amount)*x*20*deg/(Math.PI+amount*Math.abs(x)); }
+        return c;
+      })();
+      dist.oversample='4x';
+      master = audioCtx.createGain();
+      master.gain.setValueAtTime(0.95, audioCtx.currentTime);
+      master.connect(comp).connect(audioCtx.destination);
+      const kick = ()=> audioCtx.resume?.().catch(()=>{});
+      window.addEventListener('pointerdown', kick, { once:true, passive:true });
+      window.addEventListener('keydown', kick, { once:true });
+      ready = true;
+    }
+    function tone({ f=880, dur=0.18, t=audioCtx.currentTime, type='sine', g=0.7, distOn=false, detune=0 }){
+      const o=audioCtx.createOscillator(), gn=audioCtx.createGain();
+      o.type=type;
+      o.frequency.setValueAtTime(f,t);
+      if (detune) o.detune.setValueAtTime(detune,t);
+      gn.gain.setValueAtTime(0,t);
+      gn.gain.linearRampToValueAtTime(g,t+0.012);
+      gn.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+      (distOn ? o.connect(gn).connect(dist).connect(master) : o.connect(gn).connect(master));
+      o.start(t);
+      o.stop(t+dur+0.02);
+    }
+    function ok(){
+      init();
+      const t0=audioCtx.currentTime+0.01;
+      tone({f:659.25, dur:0.14, t:t0, g:1.0});
+      tone({f:830.61, dur:0.14, t:t0+0.12, g:1.0});
+      tone({f:987.77, dur:0.16, t:t0+0.24, g:1.0});
+      tone({f:1318.5, dur:0.22, t:t0+0.36, g:1.0});
+    }
+    function fail(){
+      init();
+      const t0=audioCtx.currentTime+0.01;
+      tone({f:440.00, dur:0.16, t:t0, type:'square', g:1.0, distOn:true});
+      tone({f:369.99, dur:0.16, t:t0+0.12, type:'square', g:0.95, distOn:true});
+      tone({f:293.66, dur:0.20, t:t0+0.24, type:'square', g:0.9, distOn:true});
+    }
+    return { ok, fail };
+  })();
+
+  /* ================= Theme ================= */
+  function setTheme(mode){
+    const dark = mode === 'dark';
+    document.body.classList.toggle('dark', dark);
+    themeBtn.innerHTML = dark ? '<span>Light</span>' : '<span>Dark</span>';
+    const metaTheme = document.getElementById('meta-theme');
+    if (metaTheme) metaTheme.content = dark ? '#0b1020' : '#ffffff';
+    localStorage.setItem(LS_THEME, dark ? 'dark' : 'light');
+  }
+  function initTheme(){
+    const saved = localStorage.getItem(LS_THEME);
+    if (saved) { setTheme(saved); return; }
+    const prefersDark = window.matchMedia?.('(prefers-color-scheme: dark)').matches;
+    setTheme(prefersDark ? 'dark' : 'light');
+  }
+  themeBtn.addEventListener('click', () => {
+    setTheme(document.body.classList.contains('dark') ? 'light' : 'dark');
+    themeBtn.blur();
+    setTimeout(focusPinSafely, 0);
+  });
+
+  /* ================= Network badge ================= */
+  function updateNet(){
+    const on = navigator.onLine;
+    if (!netBadge) return;
+    netBadge.textContent = on ? 'Online' : 'Offline';
+    netBadge.classList.add('net');
+    netBadge.classList.toggle('online', on);
+    netBadge.classList.toggle('offline', !on);
+  }
+  window.addEventListener('online', updateNet, { passive:true });
+  window.addEventListener('offline', updateNet, { passive:true });
+
+  /* ================= Focus helpers ================= */
+  function focusPin(){ try { pinEl.focus(); pinEl.select?.(); } catch(_) {} }
+  function focusPinSafely(){ if (document.activeElement !== qEl) focusPin(); }
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) focusPinSafely(); });
+  window.addEventListener('pageshow', (e) => { if (e.persisted) focusPinSafely(); });
+  document.addEventListener('click', (e) => {
+    if (e.target === qEl || qEl.contains(e.target)) return;
+    if (e.target.closest('#results')) return;
+    if (e.target.closest('.list')) return;
+    setTimeout(focusPinSafely, 0);
+  }, true);
+
+  /* ================= Action toggle ================= */
+  function setAction(a){
+    const inActive = a === 'in';
+    btnIn.classList.toggle('active', inActive);
+    btnOut.classList.toggle('active', !inActive);
+    setTimeout(focusPinSafely, 0);
+  }
+  btnIn.addEventListener('click', () => setAction('in'));
+  btnOut.addEventListener('click', () => setAction('out'));
+  window.addEventListener('keydown', (e)=>{
+    if(e.key==='ArrowLeft') setAction('in');
+    if(e.key==='ArrowRight') setAction('out');
+  });
+  function applyHashAction(){
+    const h = (location.hash || '').toLowerCase();
+    if (h === '#out') setAction('out');
+    else if (h === '#in') setAction('in');
+  }
+  window.addEventListener('hashchange', applyHashAction);
+
+  /* ================= De-dupe (5s) ================= */
+  const lastSeenMap = new Map();
+  function makeKey({ pin, personId }) { return pin ? `pin:${pin}` : `pid:${personId}`; }
+  function canSendNow(key){
+    const now=Date.now(), last=lastSeenMap.get(key)||0;
+    if (now-last < DEDUPE_WINDOW_MS) return false;
+    lastSeenMap.set(key, now);
+    return true;
+  }
+
+  /* ================= Queue management ================= */
+  function getQueueCounts(){
+    let pending = 0, errors = 0;
+    try{ const q = JSON.parse(localStorage.getItem(LS_PENDING_SCANS) || '[]'); pending = Array.isArray(q) ? q.length : 0; }catch(_){}
+    try{ const e = JSON.parse(localStorage.getItem(LS_CLIENT_ERRORS) || '[]'); errors = Array.isArray(e) ? e.length : 0; }catch(_){}
+    return { pending, errors };
+  }
+  function updateQueueStatusLabel(){
+    if (!queueStatusEl) return;
+    const { pending, errors } = getQueueCounts();
+    let parts = ['Queue'];
+    let title = 'Click to force sync';
+    if (pending === 0 && errors === 0) {
+      parts.push('OK');
+      title = 'All scans synced. Click to force sync.';
+    } else {
+      if (pending > 0) {
+        parts.push(`${pending}`);
+        try {
+          const q = JSON.parse(localStorage.getItem(LS_PENDING_SCANS) || '[]') || [];
+          if (q.length > 0) {
+            const maxRetries = Math.max(...q.map(i => i._retryCount || 0));
+            if (maxRetries > 0) { parts.push(`(retry ${maxRetries})`); }
+          }
+        } catch(_) {}
+      }
+      if (errors > 0) parts.push(`err:${errors}`);
+      title = `Pending: ${pending}, Errors: ${errors}. Retrying automatically. Click to force sync.`;
+    }
+    queueStatusEl.textContent = parts.join(' ');
+    queueStatusEl.title = title;
+  }
+  queueStatusEl.addEventListener('click', () => {
+    if (isFlushingQueue) { Toast.show('Already syncing...', false, 1000); return; }
+    const { pending, errors } = getQueueCounts();
+    if (pending === 0 && errors === 0) { Toast.show('Nothing to sync', true, 1200); return; }
+    Toast.show('Syncing queue...', true, 1500);
+    scheduleBatchFlush(0);
+  });
+
+  /* ================= Client error queue ================= */
+  function queueClientError(msg, extra){
+    const payload = { action:'client_error', note:String(msg||'network error'), apiKey: API_KEY, station: STATION, ...extra };
+    try{
+      const q = JSON.parse(localStorage.getItem(LS_CLIENT_ERRORS)||'[]') || [];
+      q.push(payload);
+      localStorage.setItem(LS_CLIENT_ERRORS, JSON.stringify(q));
+    }catch(_){ }
+    updateQueueStatusLabel();
+  }
+  async function flushClientErrors(){
+    if (!navigator.onLine) { updateQueueStatusLabel(); return; }
+    let q=[];
+    try{ q = JSON.parse(localStorage.getItem(LS_CLIENT_ERRORS)||'[]') || []; }catch(_){}
+    if (!q.length) { updateQueueStatusLabel(); return; }
+    while (q.length > 0) {
+      const item = q[0];
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+        const body = new URLSearchParams({ ...item, apiKey: API_KEY }).toString();
+        await fetch(ENDPOINT, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body, signal: controller.signal });
+        clearTimeout(timeoutId);
+        q.shift();
+        localStorage.setItem(LS_CLIENT_ERRORS, JSON.stringify(q));
+      } catch(_) { break; }
+    }
+    updateQueueStatusLabel();
+  }
+
+  /* ================= Pending scan queue (improved retry) ================= */
+  function sameScanPayload(a, b) {
+    if (!a || !b) return false;
+    return (
+      a.action === b.action &&
+      a.src === b.src &&
+      String(a.pin || '') === String(b.pin || '') &&
+      String(a.personId || '') === String(b.personId || '') &&
+      String(a.clientTs || '') === String(b.clientTs || '') &&
+      String(a.scanId || '') === String(b.scanId || '') &&
+      String(a.station || '') === String(b.station || '')
+    );
+  }
+  function queuePendingScan(payload){
+    try{
+      const q = JSON.parse(localStorage.getItem(LS_PENDING_SCANS) || '[]') || [];
+      const already = q.some(item => sameScanPayload(item, payload));
+      if (!already) {
+        q.push({ ...payload, apiKey: API_KEY, _retryCount: 0, _queuedAt: Date.now(), _lastAttempt: null });
+        localStorage.setItem(LS_PENDING_SCANS, JSON.stringify(q));
+      }
+    }catch(_){}
+    updateQueueStatusLabel();
+    scheduleBatchFlush();
+  }
+  function scheduleBatchFlush(delay = BATCH_DELAY_MS) {
+    clearTimeout(batchFlushTimer);
+    if (!navigator.onLine) return;
+    batchFlushTimer = setTimeout(() => {
+      if (navigator.onLine && !isFlushingQueue) { flushPendingScans(); }
+    }, delay);
+  }
+  async function removeFromQueue(item) {
+    try {
+      let q = JSON.parse(localStorage.getItem(LS_PENDING_SCANS) || '[]') || [];
+      q = q.filter(i => !sameScanPayload(i, item));
+      localStorage.setItem(LS_PENDING_SCANS, JSON.stringify(q));
+    } catch(_) {}
+  }
+  async function updateQueueItemRetry(item) {
+    try {
+      let q = JSON.parse(localStorage.getItem(LS_PENDING_SCANS) || '[]') || [];
+      const index = q.findIndex(i => sameScanPayload(i, item));
+      if (index !== -1) {
+        q[index]._retryCount = (q[index]._retryCount || 0) + 1;
+        q[index]._lastAttempt = Date.now();
+        localStorage.setItem(LS_PENDING_SCANS, JSON.stringify(q));
+      }
+    } catch(_) {}
+  }
+  async function processQueueItem(item, index) {
+    const retryCount = item._retryCount || 0;
+    if (retryCount >= RETRY_CONFIG.maxAttempts) {
+      console.error('Scan exceeded max retries, removing:', item.scanId);
+      await removeFromQueue(item);
+      queueClientError('max_retries_exceeded', { scanId: item.scanId, attempts: retryCount, payload: item });
+      return;
+    }
+    const baseDelay = RETRY_CONFIG.delays[retryCount] || RETRY_CONFIG.delays[RETRY_CONFIG.delays.length - 1];
+    const jitter = Math.random() * 200 * index;
+    if (baseDelay > 0) { await new Promise(resolve => setTimeout(resolve, jitter)); }
+
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+      const body = new URLSearchParams({ ...item, apiKey: API_KEY }).toString();
+      const res = await fetch(ENDPOINT, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body,
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+
+      if (res.ok) {
+        const data = await res.json().catch(() => ({}));
+        if (!data.error || data.status === 'duplicate') {
+          console.log('Queue item processed:', item.scanId);
+          await removeFromQueue(item);
+          return;
+        }
+        if (data.error === 'Cougar Card not found' || data.error === 'Invalid action') {
+          console.log('Non-retryable error, removing:', item.scanId);
+          await removeFromQueue(item);
+          return;
+        }
+      }
+      console.log(`Retry ${retryCount + 1}/${RETRY_CONFIG.maxAttempts} failed for:`, item.scanId);
+      await updateQueueItemRetry(item);
+    } catch (error) {
+      console.log(`Network error on retry ${retryCount + 1}/${RETRY_CONFIG.maxAttempts}:`, item.scanId);
+      await updateQueueItemRetry(item);
+    }
+  }
+  async function flushPendingScans() {
+    if (isFlushingQueue) return;
+    if (!navigator.onLine) { updateQueueStatusLabel(); return; }
+    isFlushingQueue = true;
+    try {
+      let q = [];
+      try { q = JSON.parse(localStorage.getItem(LS_PENDING_SCANS) || '[]') || []; } catch(_){}
+      if (!q.length) { updateQueueStatusLabel(); return; }
+
+      q.sort((a, b) => {
+        const aRetry = a._retryCount || 0;
+        const bRetry = b._retryCount || 0;
+        if (aRetry !== bRetry) return aRetry - bRetry;
+        return (a._queuedAt || 0) - (b._queuedAt || 0);
+      });
+
+      const toProcess = q.slice(0, RETRY_CONFIG.concurrentRetries);
+      const promises = toProcess.map((item, idx) => processQueueItem(item, idx));
+      await Promise.allSettled(promises);
+
+      try { q = JSON.parse(localStorage.getItem(LS_PENDING_SCANS) || '[]') || []; } catch(_){}
+      if (q.length > 0 && navigator.onLine) {
+        const oldestRetry = Math.min(...q.map(i => i._retryCount || 0));
+        const delay = RETRY_CONFIG.delays[oldestRetry] || RETRY_CONFIG.delays[RETRY_CONFIG.delays.length - 1];
+        scheduleBatchFlush(delay);
+      }
+    } finally {
+      isFlushingQueue = false;
+      updateQueueStatusLabel();
+    }
+  }
+  window.addEventListener('online', () => {
+    updateNet();
+    console.log('Network restored - immediate retry');
+    scheduleBatchFlush(100);
+    if (window.requestIdleCallback) { requestIdleCallback(flushClientErrors); } else { setTimeout(flushClientErrors, 800); }
+  });
+
+  /* ================= Bootstrap meta ================= */
+  function fmtShortTs(ts){
+    if (!ts) return '';
+    const d = new Date(ts);
+    return d.toLocaleString('en-US', { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' });
+  }
+  function loadBootstrapMetaFromStorage(){
+    try{ const s = localStorage.getItem(LS_BOOT_SUCCESS); if (s) lastBootSuccess = JSON.parse(s); }catch(_){}
+    try{ const f = localStorage.getItem(LS_BOOT_FAIL); if (f) lastBootFail = JSON.parse(f); }catch(_){}
+  }
+  function saveBootstrapSuccess(serverTs){
+    lastBootSuccess = { serverTs: serverTs || Date.now(), clientTs: Date.now() };
+    try{ localStorage.setItem(LS_BOOT_SUCCESS, JSON.stringify(lastBootSuccess)); }catch(_){}
+  }
+  function saveBootstrapFail(message){
+    lastBootFail = { clientTs: Date.now(), message: String(message||'failed') };
+    try{ localStorage.setItem(LS_BOOT_FAIL, JSON.stringify(lastBootFail)); }catch(_){}
+  }
+  function updateRosterStatusLabel(){
+    if (!rosterStatusEl) return;
+    let label = 'Roster: loading…';
+    let title = '';
+    if (lastBootSuccess){
+      const when = fmtShortTs(lastBootSuccess.serverTs || lastBootSuccess.clientTs);
+      if (bootstrapReady){ label = `Roster OK · ${when}`; } else { label = `Roster fallback · ${when}`; }
+      title += `Last success: ${fmtShortTs(lastBootSuccess.clientTs || lastBootSuccess.serverTs)}`;
+    } else {
+      if (lastBootFail){
+        label = `Roster failed`;
+        title += `Last failure: ${fmtShortTs(lastBootFail.clientTs)} (${lastBootFail.message||'failed'})`;
+      } else {
+        label = `Roster: loading…`;
+        title = `No successful roster downloads yet`;
+      }
+    }
+    if (lastBootFail && lastBootSuccess){
+      const whenF = fmtShortTs(lastBootFail.clientTs);
+      title += `\nLast failure: ${whenF} (${lastBootFail.message||'failed'})`;
+    }
+    rosterStatusEl.textContent = label;
+    rosterStatusEl.title = title || 'Roster bootstrap status';
+  }
+
+  /* ================= Bootstrap cache ================= */
+  let studentByLegacy = new Map();
+  let facultyByPin = new Map();
+  let facultyList = [];
+  let studentList = [];
+  let bootstrapReady = false;
+
+  async function loadBootstrap(isManualRefresh = false){
+    // Retry up to 3 times — GAS cold starts can take 20-30s
+    const MAX_ATTEMPTS = 3;
+    let lastError;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), BOOTSTRAP_TIMEOUT_MS);
+      try {
+        const res = await fetch(ENDPOINT + '?action=bootstrap&apiKey=' + encodeURIComponent(API_KEY), { signal: controller.signal });
+        clearTimeout(timeoutId);
+        if (!res.ok) throw new Error('Bootstrap HTTP ' + res.status);
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+
+        studentByLegacy = new Map(Object.entries(data.studentByLegacy || {}));
+        facultyByPin = new Map(Object.entries(data.facultyPins || {}));
+        facultyList = Array.isArray(data.facultyList) ? data.facultyList : [];
+        studentList = Array.isArray(data.studentList) ? data.studentList : [];
+        bootstrapReady = true;
+        saveBootstrapSuccess(data.ts || Date.now());
+        updateRosterStatusLabel();
+        if (isManualRefresh) { Toast.show('Roster refreshed successfully', true, 1800); }
+        return; // success
+      } catch (e) {
+        clearTimeout(timeoutId);
+        lastError = e;
+        if (attempt < MAX_ATTEMPTS) {
+          // Brief pause before retry — gives GAS a moment to warm up
+          await new Promise(r => setTimeout(r, 2000));
+        }
+      }
+    }
+    // All attempts failed
+    throw lastError;
+  }
+
+  rosterStatusEl.addEventListener('click', async () => {
+    if (isRefreshingRoster) { Toast.show('Already refreshing...', false, 1000); return; }
+    isRefreshingRoster = true;
+    const originalText = rosterStatusEl.textContent;
+    rosterStatusEl.textContent = 'Refreshing...';
+    Toast.show('Refreshing roster...', true, 1200);
+    try {
+      await loadBootstrap(true);
+    } catch (e) {
+      Toast.show('Refresh failed: ' + (e.message || 'unknown error'), false, 2500);
+      saveBootstrapFail(e && e.message ? e.message : 'refresh failed');
+      updateRosterStatusLabel();
+      queueClientError('bootstrap_failed', {
+        src: 'bootstrap_manual_refresh', msg: String(e && e.message || e || ''),
+        online: navigator.onLine, href: location.href, hash: location.hash, ua: navigator.userAgent, ts: Date.now()
+      });
+    } finally {
+      isRefreshingRoster = false;
+      if (rosterStatusEl.textContent === 'Refreshing...') { rosterStatusEl.textContent = originalText; }
+    }
+  });
+
+  function scheduleDailySync() {
+    clearTimeout(dailySyncTimer);
+    dailySyncTimer = setTimeout(async () => {
+      if (!isRefreshingRoster && bootstrapReady) {
+        try {
+          console.log('Auto-syncing roster (daily)...');
+          await loadBootstrap(false);
+          console.log('Daily roster sync completed');
+        } catch (e) {
+          console.error('Daily roster sync failed:', e);
+          queueClientError('bootstrap_autosync_failed', {
+            src: 'bootstrap_auto', msg: String(e && e.message || e || ''),
+            online: navigator.onLine, href: location.href, hash: location.hash, ua: navigator.userAgent, ts: Date.now()
+          });
+        }
+      }
+      scheduleDailySync();
+    }, 24 * 60 * 60 * 1000);
+  }
+
+  /* ================= Bootstrap overlay ================= */
+  function showBootOverlay(text){
+    if (!bootOverlay) return;
+    const t = bootOverlay.querySelector('.boot-text');
+    if (t && text) t.textContent = text;
+    bootOverlay.style.display = 'flex';
+  }
+  function hideBootOverlay(){ if (!bootOverlay) return; bootOverlay.style.display = 'none'; }
+
+  /* ================= API submit (with timeout) ================= */
+  let lastSubmitAt = 0;
+  async function submitPinOrId({ pin, personId, src='', firstName='', lastName='', grade='' }) {
+    const act = btnIn.classList.contains('active') ? 'in' : 'out';
+    const key = makeKey({ pin, personId });
+    if (!canSendNow(key)) { Toast.show('Duplicate scan ignored (5s)', false); return; }
+
+    const eventTs = Date.now();
+    const scanId = generateScanId();
+
+    const bodyObj = {
+      action: act,
+      src: src || (pin ? 'tap_unknown' : 'search_unknown'),
+      clientTs: String(eventTs),
+      apiKey: API_KEY,
+      scanId,
+      station: STATION
+    };
+    if (pin) bodyObj.pin = pin;
+    if (personId) bodyObj.personId = personId;
+    if (firstName) bodyObj.firstName = firstName;
+    if (lastName) bodyObj.lastName = lastName;
+    if (grade) bodyObj.grade = grade;
+
+    const body = new URLSearchParams(bodyObj).toString();
+
+    try{
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+      const res = await fetch(ENDPOINT, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body, signal: controller.signal });
+      clearTimeout(timeoutId);
+      const text = await res.text();
+      let data=null; try{ data = JSON.parse(text); }catch{}
+
+      if (!res.ok || (data && data.error)) {
+        const msg = (data && data.error) || ('Error ' + res.status);
+        // Drive outage — queue silently, no error toast (scan will retry automatically)
+        if (msg === 'service_unavailable') {
+          queuePendingScan({ action: act, src: bodyObj.src, pin: pin||'', personId: personId||'', firstName, lastName, grade, clientTs: String(eventTs), scanId, station: STATION });
+          return;
+        }
+        Toast.show(msg, false);
+        Chime.fail();
+        queueClientError(msg, { a:act, pin:pin||'', personId:personId||'', src: bodyObj.src, firstName, lastName, grade, scanId });
+        queuePendingScan({ action: act, src: bodyObj.src, pin: pin || '', personId: personId || '', firstName, lastName, grade, clientTs: String(eventTs), scanId, station: STATION });
+        return;
+      }
+
+      if (data.status === 'student_in') {
+        Toast.show(`${data.student||'Student'} — checked IN at ${data.time||''}`, true);
+        Chime.ok(); try{ navigator.vibrate?.(30); }catch{}
+        return;
+      }
+      if (data.status === 'student_out_recorded') {
+        Toast.show(`${data.student||'Student'} — signed OUT at ${data.time||''}`, true);
+        Chime.ok(); try{ navigator.vibrate?.(30); }catch{}
+        return;
+      }
+
+      const { status, firstName:fn, lastName:ln, time } = data || {};
+      const verb = (status === 'in') ? 'IN' : (status === 'out') ? 'OUT' : (status||'').toUpperCase();
+      const line = `${fn||''} ${ln||''} signed ${verb} — ${time||''}`.trim();
+      Toast.show(line || 'Done.', true);
+      Chime.ok(); try{ navigator.vibrate?.(30); }catch{}
+    }catch(err){
+      if (err.name === 'AbortError') { Toast.show('Request timeout', false); } else { Toast.show('Network error', false); }
+      Chime.fail();
+      queueClientError(err.name === 'AbortError' ? 'timeout' : 'fetch_failed', { a:act, pin:pin||'', personId:personId||'', src: bodyObj.src, firstName, lastName, grade, scanId });
+      queuePendingScan({ action: act, src: bodyObj.src, pin: pin || '', personId: personId || '', firstName, lastName, grade, clientTs: String(eventTs), scanId, station: STATION });
+    }finally{
+      lastSubmitAt = Date.now();
+      focusPinSafely();
+    }
+  }
+
+  /* ================= FAST student IN ================= */
+  function quickStudentIn({ legacyId, firstName, lastName, grade, src }) {
+    const act = 'in';
+    const key = makeKey({ pin: legacyId, personId: '' });
+    if (!canSendNow(key)) { Toast.show('Duplicate scan ignored (5s)', false); return; }
+
+    const eventTs = Date.now();
+    const scanId = generateScanId();
+    const now = new Date(eventTs);
+    const timeStr = now.toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit' });
+    const label = `${firstName||''} ${lastName||''}`.trim() || 'Student';
+    Toast.show(`${label} — checked IN at ${timeStr}`, true);
+    try { Chime.ok(); navigator.vibrate?.(30); } catch(_) {}
+
+    const payload = {
+      action: act, src: src || 'tap_student', pin: String(legacyId), personId: '',
+      firstName: firstName||'', lastName: lastName||'', grade: grade||'',
+      clientTs: String(eventTs), scanId, station: STATION
+    };
+    sendImmediately(payload);
+  }
+
+  /* ================= FAST student OUT ================= */
+  function quickStudentOut({ legacyId, firstName, lastName, grade, src }) {
+    const act = 'out';
+    const key = makeKey({ pin: legacyId, personId: '' });
+    if (!canSendNow(key)) { Toast.show('Duplicate scan ignored (5s)', false); return; }
+
+    const eventTs = Date.now();
+    const scanId = generateScanId();
+    const now = new Date(eventTs);
+    const timeStr = now.toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit' });
+    const who = `${firstName||''} ${lastName||''}`.trim() || 'Student';
+    Toast.show(`${who} — signed OUT — ${timeStr}`, true);
+    try { Chime.ok(); navigator.vibrate?.(30); } catch (_) {}
+
+    const payload = {
+      action: act, src: src || 'tap_student', pin: String(legacyId), personId: '',
+      firstName: firstName||'', lastName: lastName||'', grade: grade||'',
+      clientTs: String(eventTs), scanId, station: STATION
+    };
+    sendImmediately(payload);
+  }
+
+  /* ================= FAST faculty IN/OUT ================= */
+  function quickFacultyAction({ personId, pin, firstName, lastName, src }) {
+    const act = btnIn.classList.contains('active') ? 'in' : 'out';
+    const key = makeKey({ pin, personId });
+    if (!canSendNow(key)) { Toast.show('Duplicate scan ignored (5s)', false); return; }
+
+    const eventTs = Date.now();
+    const scanId = generateScanId();
+    const now = new Date(eventTs);
+    const timeStr = now.toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit' });
+    const who = `${firstName||''} ${lastName||''}`.trim() || 'Faculty';
+    const verb = act === 'in' ? 'IN' : 'OUT';
+    Toast.show(`${who} signed ${verb} — ${timeStr}`, true);
+    try { Chime.ok(); navigator.vibrate?.(30); } catch(_) {}
+
+    const finalSrc = src || (pin ? 'tap_faculty' : 'search_faculty');
+    let quickPin = pin || '';
+    if (!quickPin && personId && facultyByPin) {
+      for (const [pinKey, fac] of facultyByPin.entries()) {
+        if (fac.personId === personId) { quickPin = pinKey; break; }
+      }
+    }
+
+    const payload = {
+      action: act, src: finalSrc, pin: quickPin || '', personId: personId || '',
+      firstName: firstName || '', lastName: lastName || '', grade: '',
+      clientTs: String(eventTs), scanId, station: STATION
+    };
+    sendImmediately(payload);
+  }
+
+  /* ================= FAST unknown-card error ================= */
+  function quickUnknownCardFail(pin){
+    const act = btnIn.classList.contains('active') ? 'in' : 'out';
+    const key = makeKey({ pin, personId: '' });
+    if (!canSendNow(key)) { Toast.show('Duplicate scan ignored (5s)', false); return; }
+
+    const eventTs = Date.now();
+    const scanId = generateScanId();
+    Toast.show('Cougar Card not found', false);
+    Chime.fail();
+    try { navigator.vibrate?.(40); } catch(_){}
+
+    const payload = {
+      action: act, src: 'tap_unknown', pin: String(pin), personId: '',
+      firstName: '', lastName: '', grade: '', clientTs: String(eventTs), scanId, station: STATION
+    };
+    sendImmediately(payload);
+  }
+
+  /* ================= Immediate send ================= */
+  async function sendImmediately(payload) {
+    if (!navigator.onLine) { queuePendingScan(payload); return; }
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+      const body = new URLSearchParams({ ...payload, apiKey: API_KEY }).toString();
+      const res = await fetch(ENDPOINT, {
+        method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body, signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+
+      if (res.ok) {
+        // Check for service_unavailable — Drive outage, queue silently for retry
+        try {
+          const data = await res.clone().json();
+          if (data && data.error === 'service_unavailable') { queuePendingScan(payload); return; }
+        } catch (_) {}
+        return;
+      }
+      if (res.status >= 500) { queuePendingScan(payload); } else { queueClientError('server_4xx', { status: res.status, payload }); }
+    } catch (_) {
+      queuePendingScan(payload);
+    }
+  }
+
+  /* ================= Card input auto-submit ================= */
+  let wedgeTimer = null;
+  pinEl.addEventListener('input', ()=>{
+    clearTimeout(wedgeTimer);
+    wedgeTimer = setTimeout(()=>{
+      const d = digitsOnly(pinEl.value);
+      if (d.length < 9) return;
+      const ten = normalizePin(d);
+      if (Date.now() - lastSubmitAt < COOLDOWN_MS) return;
+
+      const isIn = btnIn.classList.contains('active');
+
+      if (bootstrapReady) {
+        if (studentByLegacy.has(ten)) {
+          const rec = studentByLegacy.get(ten);
+          const firstName = rec.firstName || '';
+          const lastName = rec.lastName || '';
+          const grade = rec.grade || '';
+          if (isIn) {
+            quickStudentIn({ legacyId: ten, firstName, lastName, grade, src: 'tap_student' });
+          } else {
+            quickStudentOut({ legacyId: ten, firstName, lastName, grade, src: 'tap_student' });
+          }
+        } else if (facultyByPin.has(ten)) {
+          const rec = facultyByPin.get(ten);
+          quickFacultyAction({ pin: ten, personId: rec.personId || '', firstName: rec.firstName || '', lastName: rec.lastName || '', src: 'tap_faculty' });
+        } else {
+          quickUnknownCardFail(ten);
+        }
+      } else {
+        submitPinOrId({ pin: ten, src: 'tap_unknown' });
+      }
+
+      pinEl.value = '';
+      focusPinSafely();
+      lastSubmitAt = Date.now();
+    }, WEDGE_QUIET_MS);
+  }, { passive:true });
+
+  /* ================= Search ================= */
+  let searchTimer = null, searchAbort = null, searchToken = 0;
+  const cacheSearch = new Map();
+  const SEARCH_CACHE_SIZE = 50;
+
+  qEl.addEventListener('input', ()=>{
+    clearTimeout(searchTimer);
+    const q = qEl.value.trim();
+    const box = $('#results');
+    if (!q) { try { searchAbort?.abort(); } catch(_){}; searchAbort = null; searchToken++; box.innerHTML = ''; return; }
+    searchTimer = setTimeout(()=>doSearch(q), 250);
+  });
+  qEl.addEventListener('keydown', (e)=>{
+    if (e.key === 'Enter') {
+      clearTimeout(searchTimer);
+      const q = qEl.value.trim();
+      if (!q) { try { searchAbort?.abort(); } catch(_){ }; searchAbort=null; searchToken++; $('#results').innerHTML=''; e.preventDefault(); return; }
+      doSearch(q);
+      e.preventDefault();
+    }
+  });
+
+  function clearSearchUI(){ qEl.value = ''; const box = $('#results'); box.innerHTML = ''; focusPinSafely(); }
+  function sectionHeader(text){ const div = document.createElement('div'); div.className='sectionHdr'; div.textContent = text; return div; }
+  function resultRow(label, btnText, onClick){
+    const row = document.createElement('div'); row.className='row';
+    const name = document.createElement('div'); name.className='name'; name.textContent = label;
+    const btn = document.createElement('button'); btn.className='actionBtn'; btn.textContent = btnText;
+    btn.addEventListener('click', ()=>{ onClick(); clearSearchUI(); });
+    row.appendChild(name); row.appendChild(btn);
+    return row;
+  }
+  function norm(s){ return String(s||'').toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g,''); }
+  function scoreName(q, first, last, fullLF){
+    const nq = norm(q);
+    const nf = norm(first), nl = norm(last);
+    const nfl = nf + ' ' + nl;
+    const nlf = fullLF ? norm(fullLF) : (nl + ', ' + nf);
+    if (nfl === nq || nlf === nq) return 1000;
+    if (nf === nq || nl === nq) return 900;
+    let s = 0;
+    if (nf.startsWith(nq)) s += 120;
+    if (nl.startsWith(nq)) s += 110;
+    if (nfl.startsWith(nq)) s += 100;
+    if (nlf.startsWith(nq)) s += 95;
+    if (nf.includes(nq)) s += 30;
+    if (nl.includes(nq)) s += 28;
+    if (nfl.includes(nq)) s += 26;
+    if (nlf.includes(nq)) s += 24;
+    return s;
+  }
+  function flipLF(full){
+    const m = String(full||'').match(/^\s*([^,]+)\s*,\s*(.+)\s*$/);
+    return m ? {first:m[2].trim(), last:m[1].trim()} : {first:String(full||'').trim(), last:''};
+  }
+
+  async function doSearch(q){
+    const box = $('#results');
+    if (bootstrapReady && (facultyList.length || studentList.length)) {
+      box.innerHTML = '<div class="muted" style="text-align:center;">Searching…</div>';
+      localSearch(q);
+      return;
+    }
+    box.innerHTML = '<div class="muted" style="text-align:center;">Searching online (slow mode)…</div>';
+    try { searchAbort?.abort(); } catch(_) {}
+    searchAbort = new AbortController();
+    const myToken = ++searchToken;
+    const sig = searchAbort.signal;
+
+    const cacheKey = q.toLowerCase();
+    const cached = cacheSearch.get(cacheKey);
+    if (cached && (Date.now() - cached.t < 30000)) { renderSearch(q, cached.data, myToken); return; }
+
+    try{
+      const apiKeyQs = '&apiKey=' + encodeURIComponent(API_KEY);
+      const facP = fetch(`${ENDPOINT}?action=search&q=${encodeURIComponent(q)}${apiKeyQs}`, {signal:sig}).then(r=>r.json());
+      const stuP = fetch(`${ENDPOINT}?action=studentSearch&q=${encodeURIComponent(q)}${apiKeyQs}`, {signal:sig}).then(r=>r.json());
+      const [facRes, stuRes] = await Promise.all([facP, stuP]);
+      const data = { fac: Array.isArray(facRes)?facRes:[], stu: Array.isArray(stuRes)?stuRes:[] };
+      cacheSearch.set(cacheKey, { t: Date.now(), data });
+      if (cacheSearch.size > SEARCH_CACHE_SIZE) { const firstKey = cacheSearch.keys().next().value; cacheSearch.delete(firstKey); }
+      renderSearch(q, data, myToken);
+    } catch (e){
+      if (e && e.name === 'AbortError') return;
+      if (myToken === searchToken) box.innerHTML = '<div class="muted" style="text-align:center;">Search failed.</div>';
+    }
+  }
+
+  function localSearch(q){
+    const myToken = ++searchToken;
+    const nq = q.trim();
+    if (!nq){ $('#results').innerHTML = ''; return; }
+
+    const cacheKey = nq.toLowerCase();
+    const cached = cacheSearch.get(cacheKey);
+    if (cached && Date.now() - cached.time < 30000) { renderSearch(nq, cached.data, myToken); return; }
+
+    const fac = [];
+    for (const r of facultyList){
+      const { firstName, lastName, personId } = r;
+      const score = scoreName(nq, firstName||'', lastName||'');
+      if (score <= 0) continue;
+      fac.push({ firstName, lastName, personId, _score:score });
+    }
+
+    const stu = [];
+    for (const r of studentList){
+      const fullName = r.fullName || `${r.lastName||''}, ${r.firstName||''}`;
+      const flip = flipLF(fullName);
+      const score = scoreName(nq, flip.first||'', flip.last||'', fullName);
+      if (score <= 0) continue;
+      stu.push({ fullName, legacyId: r.legacyId, grade: r.grade, _flip: flip, _score: score });
+    }
+
+    const facSorted = fac.sort((a,b)=>b._score - a._score).slice(0,30);
+    const stuSorted = stu.sort((a,b)=>b._score - a._score).slice(0,30);
+    const data = { fac: facSorted, stu: stuSorted };
+    cacheSearch.set(cacheKey, { data, time: Date.now() });
+    if (cacheSearch.size > SEARCH_CACHE_SIZE) { const firstKey = cacheSearch.keys().next().value; cacheSearch.delete(firstKey); }
+    renderSearch(nq, data, myToken);
+  }
+
+  function renderSearch(q, data, token){
+    if (token !== searchToken || !qEl.value.trim()) return;
+    const { fac, stu } = data;
+
+    const facMap = new Map();
+    (fac || []).forEach(r=>{
+      const pid = String(r.personId||'');
+      const s = r._score != null ? r._score : scoreName(q, r.firstName||'', r.lastName||'');
+      const cur = facMap.get(pid);
+      if (!cur || s > cur._score) facMap.set(pid, {...r, _score:s});
+    });
+    const facSorted = Array.from(facMap.values()).sort((a,b)=>b._score - a._score).slice(0,30);
+
+    const stuMap = new Map();
+    (stu || []).forEach(r=>{
+      const lf = String(r.fullName||'');
+      const flip = r._flip || flipLF(lf);
+      const legacy = String(r.legacyId||'');
+      const s = r._score != null ? r._score : scoreName(q, flip.first||'', flip.last||'', lf);
+      const cur = stuMap.get(legacy);
+      if (!cur || s > cur._score) stuMap.set(legacy, {...r, _flip:flip, _score:s});
+    });
+    const stuSorted = Array.from(stuMap.values()).sort((a,b)=>b._score - a._score).slice(0,30);
+
+    const frag = document.createDocumentFragment();
+    if (facSorted.length) {
+      frag.appendChild(sectionHeader('FACULTY'));
+      facSorted.forEach(({ firstName, lastName, personId })=>{
+        const label = `${firstName} ${lastName}`.trim() || 'Faculty';
+        frag.appendChild(resultRow(
+          label, 'Submit',
+          ()=> quickFacultyAction({ personId, pin: '', firstName, lastName, src: 'search_faculty' })
+        ));
+      });
+    }
+    if (stuSorted.length) {
+      frag.appendChild(sectionHeader('STUDENTS'));
+      stuSorted.forEach(({ fullName, legacyId, _flip, grade })=>{
+        const firstName = _flip.first || '';
+        const lastName = _flip.last || '';
+        const label = (firstName ? `${firstName} ${lastName}` : fullName).trim() || 'Student';
+        frag.appendChild(resultRow(
+          label, 'Submit',
+          ()=> {
+            const isOut = btnOut.classList.contains('active');
+            if (isOut) {
+              quickStudentOut({ legacyId: String(legacyId), firstName, lastName, grade, src: 'search_student' });
+            } else {
+              quickStudentIn({ legacyId: String(legacyId), firstName, lastName, grade, src: 'search_student' });
+            }
+          }
+        ));
+      });
+    }
+
+    const box = $('#results');
+    box.replaceChildren();
+    if (!facSorted.length && !stuSorted.length) {
+      box.innerHTML = '<div class="muted" style="text-align:center;">No matches found.</div>';
+    } else {
+      box.appendChild(frag);
+    }
+  }
+
+  /* ================= Init ================= */
+  document.addEventListener('DOMContentLoaded', async ()=>{
+    initTheme();
+    updateNet();
+    loadBootstrapMetaFromStorage();
+    updateRosterStatusLabel();
+    updateQueueStatusLabel();
+
+    pinEl.disabled = true;
+    qEl.disabled = true;
+    showBootOverlay('Loading rosters…');
+
+    try{
+      await loadBootstrap();
+      hideBootOverlay();
+      Toast.show('Kiosk ready (fast mode)', true, 1400);
+      scheduleDailySync();
+    }catch(e){
+      bootstrapReady = false;
+      saveBootstrapFail(e && e.message ? e.message : 'bootstrap failed');
+      updateRosterStatusLabel();
+      hideBootOverlay();
+      Toast.show('Online without cache — still works, just a bit slower.', false, 2600);
+      queueClientError('bootstrap_failed', {
+        src:'bootstrap', msg: String(e && e.message || e || ''),
+        online: navigator.onLine, href: location.href, hash: location.hash, ua: navigator.userAgent, ts: Date.now()
+      });
+    }
+
+    pinEl.disabled = false;
+    qEl.disabled = false;
+    setAction('in');
+    applyHashAction();
+    setTimeout(()=>{ pinEl.focus(); }, 0);
+
+    scheduleBatchFlush(500);
+    if (window.requestIdleCallback) { requestIdleCallback(flushClientErrors); } else { setTimeout(flushClientErrors, 1500); }
+  });
+})();
+</script>
+</body>
+</html>
