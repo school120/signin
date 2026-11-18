@@ -960,6 +960,18 @@ input[type=password]:focus-visible, input[type=search]:focus-visible{
     }
   }
 
+  /* ================= Two readers: a prefix marks the OUT reader ================= */
+  // The OUT reader is programmed to type a prefix character before every card number;
+  // the IN reader types the number alone. Leave OUT_PREFIX empty to treat ANY leading
+  // non-digit character as the OUT marker, or set it (e.g. 'O') to require that exact text.
+  const OUT_PREFIX = 'O';
+  function scanDirection(raw){
+    const m = String(raw || '').match(/^[^0-9]+/);
+    if (!m) return 'in';
+    if (OUT_PREFIX && !m[0].toUpperCase().startsWith(OUT_PREFIX.toUpperCase())) return 'in';
+    return 'out';
+  }
+
   /* ================= Card input auto-submit ================= */
   let wedgeTimer = null;
   pinEl.addEventListener('input', ()=>{
@@ -970,7 +982,15 @@ input[type=password]:focus-visible, input[type=search]:focus-visible{
       const ten = normalizePin(d);
       if (Date.now() - lastSubmitAt < COOLDOWN_MS) return;
 
-      const isIn = btnIn.classList.contains('active');
+      // Direction comes from which reader was used. Flip the toggle for just this scan
+      // (everything below reads it synchronously), then put it back for name search.
+      const prevAction = btnIn.classList.contains('active') ? 'in' : 'out';
+      const scanAction = scanDirection(pinEl.value);
+      if (scanAction !== prevAction) {
+        btnIn.classList.toggle('active', scanAction === 'in');
+        btnOut.classList.toggle('active', scanAction === 'out');
+      }
+      const isIn = scanAction === 'in';
 
       if (bootstrapReady) {
         if (studentByLegacy.has(ten)) {
@@ -991,6 +1011,11 @@ input[type=password]:focus-visible, input[type=search]:focus-visible{
         }
       } else {
         submitPinOrId({ pin: ten, src: 'tap_unknown' });
+      }
+
+      if (scanAction !== prevAction) {
+        btnIn.classList.toggle('active', prevAction === 'in');
+        btnOut.classList.toggle('active', prevAction === 'out');
       }
 
       pinEl.value = '';
